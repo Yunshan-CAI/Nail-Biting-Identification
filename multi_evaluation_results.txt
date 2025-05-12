@@ -1,0 +1,33 @@
+测试集评估指标:
+
+nail_contour类别:
+Accuracy: 0.9930
+F1: 0.3665
+Precision: 0.9339
+Recall: 0.2589
+IoU: 0.2448
+Dice: 0.3665
+
+nail_fold类别:
+Accuracy: 0.9977
+F1: 0.0000
+Precision: 0.0000
+Recall: 0.0000
+IoU: 0.0000
+Dice: 0.0000
+
+distal_border类别:
+Accuracy: 0.9972
+F1: 0.0000
+Precision: 0.0000
+Recall: 0.0000
+IoU: 0.0000
+Dice: 0.0000
+
+average类别:
+Accuracy: 0.9960
+F1: 0.1222
+Precision: 0.3113
+Recall: 0.0863
+IoU: 0.0816
+Dice: 0.1222

@@ -8,26 +8,34 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-# 计算 Intersection over Union (IoU)
-def compute_iou(pred, target, threshold=0.5):
-    pred = (pred > threshold).astype(np.float32)
-    target = target.astype(np.float32)
+def compute_all_metrics(pred, target, threshold=0.5):
+    pred_bin = (pred > threshold).astype(np.uint8)
+    target_bin = target.astype(np.uint8)
     
-    intersection = np.sum(pred * target)
-    union = np.sum(pred) + np.sum(target) - intersection
+    acc = accuracy_score(target_bin.flatten(), pred_bin.flatten())
+    f1 = f1_score(target_bin.flatten(), pred_bin.flatten())
+    precision = precision_score(target_bin.flatten(), pred_bin.flatten())
+    recall = recall_score(target_bin.flatten(), pred_bin.flatten())
+    
+    # IoU
+    intersection = np.sum(pred_bin * target_bin)
+    union = np.sum(pred_bin) + np.sum(target_bin) - intersection
     iou = intersection / union if union != 0 else 0
-    return iou
 
-# 计算准确率和F1得分
-def compute_metrics(pred, target):
-    pred = (pred > 0.5).astype(np.uint8)  # 预测为1的地方
-    target = target.astype(np.uint8)
-    
-    acc = accuracy_score(target.flatten(), pred.flatten())  # 计算准确率
-    f1 = f1_score(target.flatten(), pred.flatten())  # 计算F1得分
-    return acc, f1
+    # Dice coefficient
+    dice = 2 * intersection / (np.sum(pred_bin) + np.sum(target_bin)) if (np.sum(pred_bin) + np.sum(target_bin)) != 0 else 0
+
+    return {
+        "Accuracy": acc,
+        "F1": f1,
+        "Precision": precision,
+        "Recall": recall,
+        "IoU": iou,
+        "Dice": dice
+    }
+
 
 
 ############################################
@@ -141,8 +149,8 @@ class NailDataset(Dataset):
 # Step 3: 数据加载与 DataLoader
 ############################################
 # 请替换以下路径为你的图片和 mask 存放路径
-image_dir = r"C:\Users\Yunshan.Cai\Desktop\Nail-Biting-Identification\pics"
-mask_dir = r"C:\Users\Yunshan.Cai\Desktop\Nail-Biting-Identification\path_to_output_masks"
+image_dir = r"/Users/wentibaobao/Desktop/graduation thesis/Nail-Biting-Identification/pics"
+mask_dir = r"/Users/wentibaobao/Desktop/graduation thesis/Nail-Biting-Identification/path_to_output_masks"
 
 dataset = NailDataset(image_dir, mask_dir)
 dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
@@ -177,46 +185,65 @@ for epoch in range(num_epochs):
     print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}")
 
 print("Training complete.")
+torch.save(model.state_dict(), "nail_segmentation_unet.pth")
+print("Model saved as 'nail_segmentation_unet.pth'")
+
 
 ############################################
-# Step 6: 测试与结果可视化
+# Step 6: 全体样本评估（Accuracy, F1, Precision, Recall, IoU, Dice）
 ############################################
 model.eval()
-with torch.no_grad():
-    # 选择多个样本进行测试
-    num_samples = 5  # 显示5张测试样本
-    for idx in range(num_samples):
-        sample_image, sample_mask = dataset[idx]
-        sample_image = sample_image.unsqueeze(0).to(device)  # (1, 3, 256, 256)
-        pred_mask = model(sample_image).squeeze().cpu().numpy()  # 预测 mask
-        
-        # 原图与 Ground Truth mask
-        sample_image_np = np.transpose(sample_image.squeeze().cpu().numpy(), (1, 2, 0))  # 变为 (256, 256, 3)
-        sample_mask_np = sample_mask.squeeze().cpu().numpy()  # 变为 (256, 256)
-        
-        # 计算评估指标
-        acc, f1 = compute_metrics(pred_mask, sample_mask_np)
-        iou = compute_iou(pred_mask, sample_mask_np)
+all_metrics = {
+    "Accuracy": [],
+    "F1": [],
+    "Precision": [],
+    "Recall": [],
+    "IoU": [],
+    "Dice": []
+}
 
-        # 显示结果
-        plt.figure(figsize=(12, 4))
-        plt.subplot(1, 3, 1)
-        plt.imshow(sample_image_np)
-        plt.title(f"Original Image {idx+1}")
+with torch.no_grad():
+    for idx in range(len(dataset)):
+        image, mask = dataset[idx]
+        image = image.unsqueeze(0).to(device)
+        mask_np = mask.squeeze().cpu().numpy()
+
+        pred_mask = model(image).squeeze().cpu().numpy()
+        metrics = compute_all_metrics(pred_mask, mask_np)
+
+        # 累积各项指标
+        for key in all_metrics:
+            all_metrics[key].append(metrics[key])
+
+# 计算平均值
+print("Average Metrics on Full Dataset:")
+for key in all_metrics:
+    avg_value = np.mean(all_metrics[key])
+    print(f"{key}: {avg_value:.4f}")
+
+
+
         
-        plt.subplot(1, 3, 2)
-        plt.imshow(sample_mask_np, cmap="gray")
-        plt.title("Ground Truth Mask")
         
-        plt.subplot(1, 3, 3)
-        plt.imshow(pred_mask, cmap="gray")
-        plt.title("Predicted Mask")
-        
-        plt.show()
-        
-        # 打印评估结果
-        print(f"Sample {idx+1}:")
-        print(f"Accuracy: {acc:.4f}")
-        print(f"F1 Score: {f1:.4f}")
-        print(f"IoU: {iou:.4f}")
-        print("-" * 50)
+# 今天TO DO:
+# 1.计算平均的f1,accuracy and iou
+# Average Metrics on Full Dataset:
+# Accuracy: 0.9225
+# F1: 0.3593
+# Precision: 0.4998
+# Recall: 0.3668
+# IoU: 0.2444
+# Dice: 0.3593
+
+# 2.看看怎么从网络上下载更多的照片
+# 11k dataset, 5680 pics
+# 先标注100张（contour, nail fold, distal border, free edge）
+# 标注后可以做的事情：
+# a) 把新标注的100张跟原来的一百张放一起用unet，看看边缘能不能更好地被预测
+# b) 新标注的一百张可以根据nail bed长度（nail bed的长度感觉是一个更重要的标准），free edge是否rough来判断是否啃指甲，然后把这个结果跟标注对比
+# c) 新标注的一百张可以预测nail fold, distal border, free edge （是否必要？）
+
+# 重要：判断是否啃指甲的形态学差距（这个还可以再好好研究一下形态学的差距）
+# nail contour: 不啃指甲的人nail contour更接近一个椭圆
+# nail bed: 啃指甲的人nail bed显著更短
+# distal order: 啃指甲的人指甲边缘更rough
